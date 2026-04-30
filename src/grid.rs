@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 use crate::Position;
 
+mod layout;
+
 pub struct Grid<T> {
     // temp marker for inner layout
     layout: PhantomData<T>
