@@ -1,32 +1,27 @@
-use std::mem;
+use std::cmp::{max, min};
 use crate::axis::{Offset, Rect};
+use std::mem;
 
 mod loose_layout;
 pub use loose_layout::LooseLayout;
+mod compress_layout;
+pub use compress_layout::CompressLayout;
 mod tight_layout;
 pub use tight_layout::TightLayout;
+use crate::grid::layout::compress_layout::{Compressible, Guarded};
 
-pub enum AccessError<P> {
-    CannotAccess(P),
-    NoValue(P)
+#[derive(Debug)]
+pub enum AccessError {
+    CannotAccess(Offset),
+    NoValue(Offset)
 }
 
-impl <P> AccessError<P> {
-    pub fn reload<P1>(self, payload: P1) -> AccessError<P1> {
-        match self {
-            Self::CannotAccess(_) => AccessError::CannotAccess(payload),
-            Self::NoValue(_) => AccessError::NoValue(payload)
-        }
-    }
-}
+pub type AccessResult<T> = Result<T, AccessError>;
 
-pub type AccessResult<T> = Result<T, AccessError<Offset>>;
-
-fn from_option<T>(option: Option<T>) -> Result<T, AccessError<()>> {
-    match option {
-        Some(value) => Ok(value),
-        None => Err(AccessError::NoValue(()))
-    }
+#[derive(Debug)]
+pub enum CreateError {
+    InvalidSize(usize),
+    InvalidShape(Rect)
 }
 
 /// # Global Layout
@@ -43,7 +38,7 @@ pub enum GlobalLayout<T> {
     Tight(TightLayout<T>)
 }
 
-macro_rules! delegate_to_layout {
+macro_rules! delegate_to_global_layout {
     (|$layout:ident| $block:block by $expr:expr) => {
         match $expr {
             GlobalLayout::Loose($layout) => $block,
@@ -68,11 +63,11 @@ impl <T> GlobalLayout<T> {
         Self::Tight(TightLayout::with_default(width, height))
     }
 
-    pub fn repeat(width: usize, height: usize, repeated: T) -> Self
+    pub fn with_repeat(width: usize, height: usize, repeated: T) -> Self
     where
         T: Clone
     {
-        Self::Tight(TightLayout::with_elem(width, height, &repeated))
+        Self::Tight(TightLayout::with_elem(width, height, repeated))
     }
 
     /// Tighten Current Layout
@@ -80,7 +75,6 @@ impl <T> GlobalLayout<T> {
     /// turn current layout into [GlobalLayout::Tight] in-place
     ///
     /// it's a heavy operation with calling set on each exist element
-    #[cold]
     pub fn tighten(&mut self) {
         let tighten = match self {
             Self::Tight(_) => { return; },
@@ -106,7 +100,6 @@ impl <T> GlobalLayout<T> {
     /// turn current layout into [GlobalLayout::Loose] in-place
     /// 
     /// it's a heavy operation with calling set on each exist element
-    #[cold]
     pub fn loosen(&mut self) {
         let loosen = match self {
             Self::Loose(_) => { return; }
@@ -128,33 +121,138 @@ impl <T> GlobalLayout<T> {
     }
 
     pub(crate) fn get_rect(&self) -> &Rect {
-        delegate_to_layout! {
+        delegate_to_global_layout! {
             |layout| { layout.get_rect() } by self
         }
     }
 
     // CURD
     pub fn get(&self, offset: &Offset) -> AccessResult<&T> {
-        delegate_to_layout!{
+        delegate_to_global_layout!{
             |layout| { layout.get(offset) } by self
         }
     }
 
     pub fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut T> {
-        delegate_to_layout! {
+        delegate_to_global_layout! {
             |layout| { layout.get_mut(offset) } by self
         }
     }
 
     pub fn set(&mut self, offset: &Offset, item: T) -> AccessResult<Option<T>> {
-        delegate_to_layout! {
+        delegate_to_global_layout! {
             |layout| { layout.set(offset, item) } by self
         }
     }
 
     pub fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<T>> {
-        delegate_to_layout! {
+        delegate_to_global_layout! {
             |layout| { layout.rmv(offset) } by self
         }
+    }
+}
+
+pub enum Chunk<T> {
+    Loose(LooseLayout<T>),
+    Tight(TightLayout<T>)
+}
+
+impl <T> Chunk<T> {
+    /// Create Loose Chunk with Rect
+    pub fn new_loose(rect: Rect) -> Self {
+        Self::Loose(LooseLayout::with_rect(rect))
+    }
+
+    /// Create Tight Chunk with Rect
+    pub fn new_tight(rect: Rect) -> Self {
+        Self::Tight(TightLayout::new(rect.get_width(), rect.get_height()))
+    }
+}
+
+pub struct ChunkedLayout<T, I> {
+    compressed: Compressed<T, I>,
+    chunk_rect: Rect,
+    rect: Rect
+}
+
+pub enum Compressed<T, I> {
+    Chunked(CompressLayout<Chunk<T>, I>),
+    Single(CompressLayout<T, I>)
+}
+
+impl <T, I> Compressed<T, I> {
+    pub fn new_single(rect: Rect) -> Result<Self, CreateError>
+    where
+        I: Guarded,
+        usize: Compressible<I>
+    {
+        Ok(Self::Single(CompressLayout::new(rect)?))
+    }
+
+    pub fn new_chunked(rect: Rect) -> Result<Self, CreateError>
+    where
+        I: Guarded,
+        usize: Compressible<I>
+    {
+        Ok(Self::Chunked(CompressLayout::new(rect)?))
+    }
+}
+
+impl <T, I> ChunkedLayout<T, I> {
+    fn safe_count(total: usize, unit: usize) -> usize {
+        if unit == 0 {
+            return 0;
+        }
+        match total.checked_add(unit - 1) {
+            Some(safe_sum) => safe_sum / unit,
+            _ => {
+                let main = total / unit;
+                if total % unit != 0 {
+                    main + 1
+                } else {
+                    main
+                }
+            }
+        }
+    }
+
+    pub fn with_chunk_rect_and_rect(chunk_rect: Rect, rect: Rect) -> Result<Self, CreateError>
+    where
+        I: Guarded,
+        usize: Compressible<I>
+    {
+        let compressed =
+            match (chunk_rect.get_width(), chunk_rect.get_height()) {
+                (0, _) | (_, 0) => { return Err(CreateError::InvalidShape(chunk_rect)); }
+                (1, 1) => Compressed::new_single(rect),
+                _ => {
+                    let chunk_width_count = Self::safe_count(rect.get_width(), chunk_rect.get_width());
+                    let chunk_height_count = Self::safe_count(rect.get_height(), chunk_rect.get_height());
+                    Compressed::new_chunked(Rect::new(chunk_width_count, chunk_height_count))
+                }
+            }?;
+        Ok(Self { compressed, chunk_rect, rect })
+    }
+
+    pub fn new(width: usize, height: usize) -> Result<Self, CreateError>
+    where
+        I: Guarded,
+        usize: Compressible<I>
+    {
+        let chunk_rect = match (width, height) {
+            (0, _) | (_, 0) => { return Err(CreateError::InvalidSize(0)); }
+            (width, height) => {
+                match width.checked_mul(height) {
+                    Some(total_size) if total_size.is_compressible() => Rect::new(1, 1),
+                    Some(big_size) => {
+                        todo!("get unhandled big size {}", big_size)
+                    },
+                    _ => {
+                        todo!("get extra big size")
+                    }
+                }
+            }
+        };
+        Self::with_chunk_rect_and_rect(chunk_rect, Rect::new(width, height))
     }
 }

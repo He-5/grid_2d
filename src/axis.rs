@@ -5,19 +5,8 @@ use std::cmp::{max, min};
 pub use zone::{Rect, RectZone, RectWalker, OffsetWalker, MajoredRect};
 
 use std::ops::{Add, AddAssign, Mul, Neg, Range, Sub, SubAssign};
-use std::ptr;
 use crate::some;
 // pub type Position = (usize, usize);
-
-fn process_in_place<T>(target: &mut T, f: impl FnOnce(T) -> T) {
-    let raw: *mut T = target;
-    unsafe {
-        let value = ptr::read(raw);
-        let processed = f(value);
-        ptr::write(raw, processed);
-        // value should not drop in this case;
-    };
-}
 
 /// the `Position` represent a 2-Dim grid pos
 #[derive(Copy, Clone, Debug, Default, Hash, PartialEq, Eq)]
