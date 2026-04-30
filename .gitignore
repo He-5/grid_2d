@@ -1,0 +1,5 @@
+/target
+/.proxyai
+/.claude
+/.idea
+Cargo.lock
