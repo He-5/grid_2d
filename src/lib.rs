@@ -1,3 +1,8 @@
+mod grid;
+pub use grid::{
+    Grid
+};
+
 mod axis;
 pub use axis::{
     Position,
