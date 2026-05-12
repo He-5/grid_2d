@@ -5,6 +5,7 @@ mod rect;
 mod offset;
 
 pub use rect::{Rect, RectZone, RectWalker, MajoredRect};
+pub(crate) use rect::chunking;
 pub use offset::OffsetWalker;
 
 /// Zone stand for an area which provide:

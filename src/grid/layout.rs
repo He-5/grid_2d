@@ -1,5 +1,4 @@
-use std::cmp::{max, min};
-use crate::axis::{Offset, Rect};
+use crate::axis::{chunking, Offset, Rect};
 use std::mem;
 
 mod loose_layout;
@@ -8,7 +7,7 @@ mod compress_layout;
 pub use compress_layout::CompressLayout;
 mod tight_layout;
 pub use tight_layout::TightLayout;
-use crate::grid::layout::compress_layout::{Compressible, Guarded};
+use crate::grid::layout::compress_layout::{Compressible, Guarded, RangeCompressible};
 
 #[derive(Debug)]
 pub enum AccessError {
@@ -152,32 +151,28 @@ impl <T> GlobalLayout<T> {
     }
 }
 
-pub enum Chunk<T> {
-    Loose(LooseLayout<T>),
-    Tight(TightLayout<T>)
-}
-
-impl <T> Chunk<T> {
-    /// Create Loose Chunk with Rect
-    pub fn new_loose(rect: Rect) -> Self {
-        Self::Loose(LooseLayout::with_rect(rect))
-    }
-
-    /// Create Tight Chunk with Rect
-    pub fn new_tight(rect: Rect) -> Self {
-        Self::Tight(TightLayout::new(rect.get_width(), rect.get_height()))
-    }
-}
-
 pub struct ChunkedLayout<T, I> {
     compressed: Compressed<T, I>,
-    chunk_rect: Rect,
     rect: Rect
 }
 
 pub enum Compressed<T, I> {
-    Chunked(CompressLayout<Chunk<T>, I>),
+    Chunked(CompressLayout<TightLayout<T>, I>, Rect),
     Single(CompressLayout<T, I>)
+}
+
+fn split_offset_by_rect(offset: &Offset, rect: &Rect) -> Option<(Offset, Offset)>
+{
+    if offset.get_x() < 0 || offset.get_y() < 0 {
+        return None;
+    }
+    let (abs_x, abs_y) = (offset.get_x() as usize, offset.get_y() as usize);
+    let (chunk_width, chunk_height) = (rect.get_width(), rect.get_height());
+    let (chunk_x, in_chunk_x) = (abs_x.div_euclid(chunk_width), abs_x.rem_euclid(chunk_width));
+    let (chunk_y, in_chunk_y) = (abs_y.div_euclid(chunk_height), abs_y.rem_euclid(chunk_height));
+    let chunk_offset = (chunk_x, chunk_y).try_into().ok()?;
+    let in_chunk_offset = (in_chunk_x, in_chunk_y).try_into().ok()?;
+    Some((chunk_offset, in_chunk_offset))
 }
 
 impl <T, I> Compressed<T, I> {
@@ -189,12 +184,83 @@ impl <T, I> Compressed<T, I> {
         Ok(Self::Single(CompressLayout::new(rect)?))
     }
 
-    pub fn new_chunked(rect: Rect) -> Result<Self, CreateError>
+    pub fn new_chunked(rect: Rect, chunk_rect: Rect) -> Result<Self, CreateError>
     where
         I: Guarded,
         usize: Compressible<I>
     {
-        Ok(Self::Chunked(CompressLayout::new(rect)?))
+        Ok(Self::Chunked(CompressLayout::new(rect)?, chunk_rect))
+    }
+
+    fn get(&self, offset: &Offset) -> AccessResult<&T>
+    where
+        I: Clone,
+        usize: Compressible<I>
+    {
+        match self {
+            Compressed::Single(layout) => layout.get(offset),
+            Compressed::Chunked(layout, chunk) => {
+                let (chunk_offset, in_chunk_offset) = split_offset_by_rect(offset, chunk).ok_or(AccessError::NoValue(*offset))?;
+                let chunk = layout.get(&chunk_offset)?;
+                chunk.get(&in_chunk_offset)
+            }
+        }
+    }
+
+    fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut T>
+    where
+        I: Clone,
+        usize: Compressible<I>
+    {
+        match self {
+            Compressed::Single(layout) => layout.get_mut(offset),
+            Compressed::Chunked(layout, chunk) => {
+                let (chunk_offset, in_chunk_offset) = split_offset_by_rect(offset, chunk).ok_or(AccessError::NoValue(*offset))?;
+                let chunk = layout.get_mut(&chunk_offset)?;
+                chunk.get_mut(&in_chunk_offset)
+            }
+        }
+    }
+
+    fn set(&mut self, offset: &Offset, item: T) -> AccessResult<Option<T>>
+    where
+        I: Clone,
+        usize: Compressible<I>
+    {
+        match self {
+            Compressed::Single(layout) => layout.set(offset, item),
+            Compressed::Chunked(layout, chunk_rect) => {
+                let (chunk_offset, in_chunk_offset) = split_offset_by_rect(offset, chunk_rect).ok_or(AccessError::NoValue(*offset))?;
+                match layout.get_mut(&chunk_offset) {
+                    Ok(chunk) => chunk.set(&in_chunk_offset, item),
+                    Err(AccessError::NoValue(_)) => {
+                        let mut new_chunk = TightLayout::with_rect(*chunk_rect);
+                        new_chunk.set(&in_chunk_offset, item)?;
+                        layout.set(&chunk_offset, new_chunk)?;
+                        Ok(None)
+                    }
+                    Err(err) => Err(err)
+                }
+            }
+        }
+    }
+
+    fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<T>>
+    where
+        I: Clone + Guarded,
+        usize: Compressible<I>
+    {
+        match self {
+            Compressed::Single(layout) => layout.rmv(offset),
+            Compressed::Chunked(layout, chunk_rect) => {
+                let (chunk_offset, in_chunk_offset) = split_offset_by_rect(offset, chunk_rect).ok_or(AccessError::NoValue(*offset))?;
+                match layout.get_mut(&chunk_offset) {
+                    Ok(chunk) => chunk.rmv(&in_chunk_offset),
+                    Err(AccessError::NoValue(_)) => Ok(None),
+                    Err(err) => Err(err)
+                }
+            }
+        }
     }
 }
 
@@ -216,7 +282,7 @@ impl <T, I> ChunkedLayout<T, I> {
         }
     }
 
-    pub fn with_chunk_rect_and_rect(chunk_rect: Rect, rect: Rect) -> Result<Self, CreateError>
+    fn with_chunk_rect_and_rect(chunk_rect: Rect, rect: Rect) -> Result<Self, CreateError>
     where
         I: Guarded,
         usize: Compressible<I>
@@ -228,31 +294,65 @@ impl <T, I> ChunkedLayout<T, I> {
                 _ => {
                     let chunk_width_count = Self::safe_count(rect.get_width(), chunk_rect.get_width());
                     let chunk_height_count = Self::safe_count(rect.get_height(), chunk_rect.get_height());
-                    Compressed::new_chunked(Rect::new(chunk_width_count, chunk_height_count))
+                    Compressed::new_chunked(Rect::new(chunk_width_count, chunk_height_count), chunk_rect)
                 }
             }?;
-        Ok(Self { compressed, chunk_rect, rect })
+        Ok(Self { compressed, rect })
     }
 
     pub fn new(width: usize, height: usize) -> Result<Self, CreateError>
     where
         I: Guarded,
+        usize: RangeCompressible<I>
+    {
+        let (_, max_index) = usize::get_range().into_inner();
+        let chunk_rect = chunking(width, height, max_index + 1)
+            .ok_or(CreateError::InvalidShape(Rect::new(width, height)))?;
+        Self::with_chunk_rect_and_rect(chunk_rect, Rect::new(width, height))
+    }
+
+    // CURD
+    pub fn get(&self, offset: &Offset) -> AccessResult<&T>
+    where
+        I: Clone,
         usize: Compressible<I>
     {
-        let chunk_rect = match (width, height) {
-            (0, _) | (_, 0) => { return Err(CreateError::InvalidSize(0)); }
-            (width, height) => {
-                match width.checked_mul(height) {
-                    Some(total_size) if total_size.is_compressible() => Rect::new(1, 1),
-                    Some(big_size) => {
-                        todo!("get unhandled big size {}", big_size)
-                    },
-                    _ => {
-                        todo!("get extra big size")
-                    }
-                }
-            }
-        };
-        Self::with_chunk_rect_and_rect(chunk_rect, Rect::new(width, height))
+        if !self.rect.contains_offset(offset) {
+            return Err(AccessError::CannotAccess(*offset));
+        }
+        self.compressed.get(offset)
+    }
+
+    pub fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut T>
+    where
+        I: Clone,
+        usize: Compressible<I>
+    {
+        if !self.rect.contains_offset(offset) {
+            return Err(AccessError::CannotAccess(*offset));
+        }
+        self.compressed.get_mut(offset)
+    }
+
+    pub fn set(&mut self, offset: &Offset, item: T) -> AccessResult<Option<T>>
+    where
+        I: Clone,
+        usize: Compressible<I>
+    {
+        if !self.rect.contains_offset(offset) {
+            return Err(AccessError::CannotAccess(*offset));
+        }
+        self.compressed.set(offset, item)
+    }
+
+    pub fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<T>>
+    where
+        I: Clone + Guarded,
+        usize: Compressible<I>
+    {
+        if !self.rect.contains_offset(offset) {
+            return Err(AccessError::CannotAccess(*offset));
+        }
+        self.compressed.rmv(offset)
     }
 }

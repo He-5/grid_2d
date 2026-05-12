@@ -2,7 +2,7 @@ use crate::axis::Offset;
 use crate::{Position, Rect};
 
 mod layout;
-pub use layout::{AccessError, AccessResult, GlobalLayout, Chunk, CompressLayout};
+pub use layout::{AccessError, AccessResult, GlobalLayout, CompressLayout};
 
 pub struct Grid<T> {
     layout: GlobalLayout<T>

@@ -4,6 +4,7 @@ use crate::axis::{Offset, Rect};
 use crate::grid::layout::{AccessError, AccessResult, CreateError};
 use std::iter::repeat_with;
 use std::{mem, vec};
+use std::ops::{Range, RangeInclusive};
 use crate::some;
 
 enum DataSlot {
@@ -58,6 +59,10 @@ pub trait Compressible<Target>: Sized {
     fn is_compressible(&self) -> bool;
 }
 
+pub trait RangeCompressible<Target>: Compressible<Target> {
+    fn get_range() -> RangeInclusive<Self>;
+}
+
 macro_rules! impl_compressible_for_int {
     ($to_compress:ident => [$($compressed:ident)*]) => {
         $(
@@ -75,6 +80,13 @@ macro_rules! impl_compressible_for_int {
                     MIN..=MAX => true,
                     _ => false
                 }
+            }
+        }
+        impl RangeCompressible<$compressed> for $to_compress {
+            fn get_range() -> RangeInclusive<Self> {
+                const MAX: $to_compress = $compressed::MAX as $to_compress;
+                const MIN: $to_compress = $compressed::MIN as $to_compress;
+                MIN..=MAX
             }
         }
         )*

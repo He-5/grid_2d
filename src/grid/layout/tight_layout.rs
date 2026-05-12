@@ -84,8 +84,15 @@ impl <T> TightLayout<T> {
 
     pub fn new(width: usize, height: usize) -> Self
     {
+        Self::with_rect(
+            Rect::new(width, height)
+        )
+    }
+
+    pub fn with_rect(rect: Rect) -> Self
+    {
         Self::with_rect_and_src(
-            MajoredRect::new_row(width, height),
+            MajoredRect::RowMajored(rect),
             || None
         )
     }
