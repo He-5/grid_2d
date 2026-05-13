@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use std::ops::{BitAnd, Deref, DerefMut, Range};
 use crate::axis::{in_range, overlapping, Offset};
-use crate::axis::zone::{Walkable, Zone};
+use crate::axis::zone::Zone;
 use crate::{some, Position};
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
@@ -120,38 +120,6 @@ impl BitAnd for &RectZone {
             y_overlap.len(),
             Position::new(x_overlap.start, y_overlap.start)
         ))
-    }
-}
-
-pub struct RectWalker {
-    rect: Rect,
-    cur_index: usize
-}
-
-impl RectWalker {
-    pub const fn new(rect: Rect) -> Self {
-        Self { rect, cur_index: 0 }
-    }
-}
-
-impl Iterator for RectWalker {
-    type Item = Offset;
-    fn next(&mut self) -> Option<Self::Item> {
-        let cur_offset = self.rect.fold_x_first(self.cur_index)?;
-        self.cur_index += 1;
-        Some(cur_offset)
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.rect.size();
-        (size - self.cur_index, Some(size))
-    }
-}
-
-impl Walkable for RectZone {
-    type Walker = RectWalker;
-    fn walk_through(&self) -> Self::Walker {
-        RectWalker::new(self.rect)
     }
 }
 

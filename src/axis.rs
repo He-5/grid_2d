@@ -2,7 +2,7 @@
 pub mod zone;
 
 use std::cmp::{max, min};
-pub use zone::{Rect, RectZone, RectWalker, OffsetWalker, MajoredRect};
+pub use zone::{Rect, RectZone, MajoredRect};
 pub(crate) use zone::chunking;
 
 use std::ops::{Add, AddAssign, Mul, Neg, Range, Sub, SubAssign};

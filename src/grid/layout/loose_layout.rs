@@ -77,7 +77,3 @@ impl <T> IntoIterator for LooseLayout<T> {
         }
     }
 }
-
-pub struct AllOffset<'map, T: 'map> {
-    offsets: hash_map::Keys<'map, Offset, T>
-}

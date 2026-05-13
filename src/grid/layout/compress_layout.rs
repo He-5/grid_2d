@@ -4,7 +4,7 @@ use crate::axis::{Offset, Rect};
 use crate::grid::layout::{AccessError, AccessResult, CreateError};
 use std::iter::repeat_with;
 use std::{mem, vec};
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 use crate::some;
 
 enum DataSlot {
@@ -19,14 +19,6 @@ impl DataSlot {
             Self::Occurred(_, data_index) => Some(*data_index),
             _ => None
         }
-    }
-
-    pub fn get_data_from<'vec, T>(&self, data_container: &'vec Vec<T>) -> Option<&'vec T> {
-        data_container.get(self.get_data_index()?)
-    }
-
-    pub fn get_mut_data_from<'vec, T>(&self, data_container: &'vec mut Vec<T>) -> Option<&'vec mut T> {
-        data_container.get_mut(self.get_data_index()?)
     }
 }
 

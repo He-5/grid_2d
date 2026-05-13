@@ -9,12 +9,7 @@ pub use axis::{
     Offset,
     Rect,
     RectZone,
-    RectWalker,
-    OffsetWalker,
-    zone::{
-        Zone,
-        Walkable
-    }
+    zone::Zone
 };
 
 mod macros;
