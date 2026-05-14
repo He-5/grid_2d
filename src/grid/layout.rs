@@ -23,6 +23,19 @@ pub enum CreateError {
     InvalidShape(Rect)
 }
 
+pub trait Layout {
+    type Item;
+    
+    fn get(&self, offset: &Offset) -> AccessResult<&Self::Item>;
+    fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut Self::Item>;
+    fn set(&mut self, offset: &Offset, item: Self::Item) -> AccessResult<Option<Self::Item>>;
+    fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<Self::Item>>;
+
+    fn has(&self, offset: &Offset) -> bool {
+        self.get(offset).is_ok()
+    }
+}
+
 /// # Global Layout
 ///
 /// Global Layout is design for a single-alloc area,

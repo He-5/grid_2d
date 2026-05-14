@@ -1,5 +1,5 @@
 use crate::axis::{MajoredRect, Offset, Rect};
-use crate::grid::layout::{AccessError, AccessResult};
+use crate::grid::layout::{AccessError, AccessResult, Layout};
 use std::iter::repeat_with;
 use std::vec;
 
@@ -104,24 +104,26 @@ impl <T> TightLayout<T> {
     fn map_data_index(&self, offset: &Offset) -> AccessResult<usize> {
         self.rect.flat_majored(offset).ok_or(AccessError::CannotAccess(*offset))
     }
+}
 
-    // CURD
-    pub fn get(&self, offset: &Offset) -> AccessResult<&T> {
+impl <T> Layout for TightLayout<T> {
+    type Item = T;
+    fn get(&self, offset: &Offset) -> AccessResult<&Self::Item> {
         let index = self.map_data_index(offset)?;
         self.data[index].as_ref().ok_or(AccessError::NoValue(*offset))
     }
 
-    pub fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut T> {
+    fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut Self::Item> {
         let index = self.map_data_index(offset)?;
         self.data[index].as_mut().ok_or(AccessError::NoValue(*offset))
     }
 
-    pub fn set(&mut self, offset: &Offset, item: T) -> AccessResult<Option<T>> {
+    fn set(&mut self, offset: &Offset, item: Self::Item) -> AccessResult<Option<Self::Item>> {
         let index = self.map_data_index(offset)?;
         Ok(self.data[index].replace(item))
     }
 
-    pub fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<T>> {
+    fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<Self::Item>> {
         let index = self.map_data_index(offset)?;
         Ok(self.data[index].take())
     }

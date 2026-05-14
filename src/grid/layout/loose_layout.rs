@@ -1,7 +1,7 @@
 //! 最宽松的存储布局，存储离散数据
 
 use crate::axis::{Offset, Rect};
-use crate::grid::layout::{AccessError, AccessResult};
+use crate::grid::layout::{AccessError, AccessResult, Layout};
 use std::cmp::max;
 use std::collections::{hash_map, HashMap};
 
@@ -33,24 +33,27 @@ impl <T> LooseLayout<T> {
             Err(AccessError::CannotAccess(*offset))
         }
     }
+}
 
-    // CURD
-    pub fn get(&self, offset: &Offset) -> AccessResult<&T> {
+impl <T> Layout for LooseLayout<T> {
+    type Item = T;
+
+    fn get(&self, offset: &Offset) -> AccessResult<&Self::Item> {
         self.contains_check(offset)?;
         self.data_map.get(offset).ok_or(AccessError::NoValue(*offset))
     }
 
-    pub fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut T> {
+    fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut Self::Item> {
         self.contains_check(offset)?;
         self.data_map.get_mut(offset).ok_or(AccessError::NoValue(*offset))
     }
 
-    pub fn set(&mut self, offset: &Offset, item: T) -> AccessResult<Option<T>> {
+    fn set(&mut self, offset: &Offset, item: Self::Item) -> AccessResult<Option<Self::Item>> {
         self.contains_check(offset)?;
         Ok(self.data_map.insert(*offset, item))
     }
 
-    pub fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<T>> {
+    fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<Self::Item>> {
         self.contains_check(offset)?;
         Ok(self.data_map.remove(offset))
     }
