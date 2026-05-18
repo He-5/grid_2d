@@ -1,9 +1,16 @@
 use std::ops::{Deref, DerefMut};
 use crate::axis::Offset;
-use crate::{Position};
+use crate::Position;
 
 mod layout;
-pub use layout::{AccessError, AccessResult, GlobalLayout, CompressLayout, Layout};
+pub use layout::{AccessError, AccessResult, CompressLayout, GlobalLayout, Layout};
+
+mod walker;
+pub use walker::{
+    WalkWith, Walkthrough,
+    RectWalker, OffsetWalker,
+    PathWalker, Movement, D4Step, D8Step
+};
 
 pub struct Grid<L> {
     layout: L
@@ -46,6 +53,15 @@ impl <L> Grid<L> {
         L: Layout
     {
         self.layout.rmv(&self.get_offset_in_grid(pos)?)
+    }
+
+    pub fn walkthrough<W>(&self, walker: W) -> Walkthrough<'_, W, L> {
+        Walkthrough::new(walker, &self.layout)
+    }
+
+    pub fn walk_with<W>(&mut self, walker: W) -> WalkWith<'_, W, L>
+    {
+        WalkWith::new(walker, &mut self.layout)
     }
 }
 

@@ -1,6 +1,14 @@
 mod grid;
 pub use grid::{
-    Grid
+    Grid,
+    RectWalker,
+    OffsetWalker,
+    PathWalker,
+    Movement,
+    D8Step,
+    D4Step,
+    WalkWith,
+    Walkthrough
 };
 
 mod axis;
