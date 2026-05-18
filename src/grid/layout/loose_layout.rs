@@ -22,7 +22,7 @@ impl <T> LooseLayout<T> {
         }
     }
 
-    pub(crate) fn get_rect(&self) -> &Rect {
+    pub fn get_rect(&self) -> &Rect {
         &self.rect
     }
 
