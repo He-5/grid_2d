@@ -1,17 +1,18 @@
-use crate::axis::{MajoredRect, Offset, Rect};
+use crate::axis::{Offset, Rect};
 use crate::grid::layout::{AccessError, AccessResult, Layout};
-use std::iter::repeat_with;
+use std::iter::{repeat_with, Enumerate};
+use std::ops::ControlFlow;
 use std::vec;
 
 pub struct TightLayout<T> {
     data: Vec<Option<T>>,
-    rect: MajoredRect
+    rect: Rect
 }
 
 impl <T> TightLayout<T> {
 
     /// Take data to build layout
-    pub fn with_rect_and_data(rect: MajoredRect, mut data: Vec<Option<T>>) -> Self {
+    pub fn with_rect_and_data(rect: Rect, mut data: Vec<Option<T>>) -> Self {
         let rect_size = rect.size();
         let data_len = data.len();
         if rect_size < data_len {
@@ -28,11 +29,10 @@ impl <T> TightLayout<T> {
         Self { data, rect }
     }
 
-    pub fn with_rect_and_src(rect: MajoredRect, src: impl FnMut() -> Option<T>) -> Self {
-        Self {
-            data: repeat_with(src).take(rect.size()).collect(),
-            rect
-        }
+    pub fn with_rect_and_src(rect: Rect, src: impl FnMut() -> Option<T>) -> Self {
+        let mut data = Vec::with_capacity(rect.size());
+        data.extend(repeat_with(src).take(rect.size()));
+        Self::with_rect_and_data(rect, data)
     }
 
     pub fn with_default(width: usize, height: usize) -> Self
@@ -40,7 +40,7 @@ impl <T> TightLayout<T> {
         T: Default
     {
         Self::with_rect_and_src(
-            MajoredRect::new_row(width, height),
+            Rect::new(width, height),
             || Some(Default::default())
         )
     }
@@ -50,7 +50,7 @@ impl <T> TightLayout<T> {
         T: Clone
     {
         Self::with_rect_and_src(
-            MajoredRect::new_row(width, height),
+            Rect::new(width, height),
             || Some(elem.clone())
         )
     }
@@ -58,21 +58,12 @@ impl <T> TightLayout<T> {
     pub fn fill_with(&mut self, mut f: impl FnMut(Offset) -> T) {
         self.data.iter_mut()
             .enumerate()
-            // only care about those empty slot
-            .filter(|(_, slot)| slot.is_none())
             .for_each(|(index, slot)| {
-                if let Some(offset) = self.rect.fold_majored(index) {
+                if let Some(offset) = self.rect.fold_x_first(index) {
                     let fill_elem = f(offset);
                     let _ = slot.insert(fill_elem);
                 }
             })
-    }
-
-    pub fn fill_default(&mut self)
-    where
-        T: Default
-    {
-        self.fill_with(|_| Default::default())
     }
 
     pub fn fill(&mut self, elem: T)
@@ -92,17 +83,17 @@ impl <T> TightLayout<T> {
     pub fn with_rect(rect: Rect) -> Self
     {
         Self::with_rect_and_src(
-            MajoredRect::RowMajored(rect),
+            rect,
             || None
         )
     }
 
-    pub(crate) fn get_rect(&self) -> &Rect {
+    pub fn get_rect(&self) -> &Rect {
         &self.rect
     }
 
     fn map_data_index(&self, offset: &Offset) -> AccessResult<usize> {
-        self.rect.flat_majored(offset).ok_or(AccessError::CannotAccess(*offset))
+        self.rect.flatten_x_first(offset).ok_or(AccessError::CannotAccess(*offset))
     }
 }
 
@@ -130,55 +121,19 @@ impl <T> Layout for TightLayout<T> {
 }
 
 pub struct IntoIter<T> {
-    remaining: vec::IntoIter<Option<T>>,
-    stored_next: Option<Option<T>>,
-    consumed: usize,
-    rect: MajoredRect
-}
-
-impl <T> IntoIter<T> {
-    fn store_next_one(&mut self) -> Option<Option<T>> {
-        if let Some(slot) = self.remaining.next() {
-            self.stored_next.replace(slot)
-        } else {
-            None
-        }
-    }
-
-    fn store_next_some(&mut self) {
-        while matches!(self.stored_next, None | Some(None)) {
-            // 这里主要是区分None和Some(None)
-            // None表示stored中的值要么从未存在，要么已经计算过consumed了，不能重复计算
-            // 其他的Some(None)，表示从remaining取得了None值，但是又消耗掉了，要计算consumed值
-            if let Some(_) = self.store_next_one() {
-                self.consumed += 1;
-            }
-        }
-    }
-
-    fn consume_stored(&mut self) -> Option<Option<T>> {
-        match self.stored_next.take() {
-            Some(stored) => {
-                self.consumed += 1;
-                Some(stored)
-            },
-            None => None
-        }
-    }
+    remaining: Enumerate<vec::IntoIter<Option<T>>>,
+    rect: Rect
 }
 
 impl <T> Iterator for IntoIter<T> {
     type Item = (Offset, T);
     fn next(&mut self) -> Option<Self::Item> {
-        self.store_next_some();
-        match self.consume_stored() {
-            Some(slot) => Some((
-                // 这里consumed值域在[1, rect.size()], 要-1变成0开始的下标
-                self.rect.fold_majored(self.consumed - 1)?,
-                slot?
-            )),
-            None => None
-        }
+        let (index, value) = self.remaining.try_fold((), |_, remains| match remains {
+            (index, Some(value)) => ControlFlow::Break((index, value)),
+            // skip all None slots
+            _ => ControlFlow::Continue(())
+        }).break_value()?;
+        Some((self.rect.fold_x_first(index)?, value))
     }
 }
 
@@ -188,10 +143,8 @@ impl <T> IntoIterator for TightLayout<T> {
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            remaining: self.data.into_iter(),
-            rect: self.rect,
-            consumed: 0,
-            stored_next: None
+            remaining: self.data.into_iter().enumerate(),
+            rect: self.rect
         }
     }
 }
