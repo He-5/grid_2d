@@ -1,57 +1,63 @@
+use std::ops::{Deref, DerefMut};
 use crate::axis::Offset;
-use crate::{Position, Rect};
+use crate::{Position};
 
 mod layout;
-pub use layout::{AccessError, AccessResult, GlobalLayout, CompressLayout};
+pub use layout::{AccessError, AccessResult, GlobalLayout, CompressLayout, Layout};
 
-pub struct Grid<T> {
-    layout: GlobalLayout<T>
+pub struct Grid<L> {
+    layout: L
 }
 
-impl <T> Grid<T> {
-    pub fn new(width: usize, height: usize) -> Self {
-        Self {
-            layout: GlobalLayout::new(width, height)
-        }
-    }
-
-    pub fn with_default(width: usize, height: usize) -> Self
-    where
-        T: Default
-    {
-        Self {
-            layout: GlobalLayout::with_default(width, height)
-        }
-    }
-
-    pub fn get_rect(&self) -> &Rect {
-        self.layout.get_rect()
+impl <L> Grid<L> {
+    pub fn with_layout(layout: L) -> Self {
+        Self { layout }
     }
 
     fn get_offset_in_grid(&self, position: &Position) -> AccessResult<Offset> {
-        let offset = Offset::try_from(*position)
-            .map_err(|_| AccessError::CannotAccess(Offset::new(-1, -1)))?;
-        if self.layout.get_rect().contains_offset(&offset) {
-            Ok(offset)
-        } else {
-            Err(AccessError::CannotAccess(offset))
-        }
+        Offset::try_from(*position)
+            .map_err(|_| AccessError::CannotAccess(Offset::new(-1, -1)))
     }
 
     // CURD
-    pub fn get(&self, pos: &Position) -> AccessResult<&T> {
+    pub fn get(&self, pos: &Position) -> AccessResult<&L::Item>
+    where
+        L: Layout
+    {
         self.layout.get(&self.get_offset_in_grid(pos)?)
     }
 
-    pub fn get_mut(&mut self, pos: &Position) -> AccessResult<&mut T> {
+    pub fn get_mut(&mut self, pos: &Position) -> AccessResult<&mut L::Item>
+    where
+        L: Layout
+    {
         self.layout.get_mut(&self.get_offset_in_grid(pos)?)
     }
 
-    pub fn set(&mut self, pos: &Position, item: T) -> AccessResult<Option<T>> {
+    pub fn set(&mut self, pos: &Position, item: L::Item) -> AccessResult<Option<L::Item>>
+    where
+        L: Layout
+    {
         self.layout.set(&self.get_offset_in_grid(pos)?, item)
     }
 
-    pub fn rmv(&mut self, pos: &Position) -> AccessResult<Option<T>> {
+    pub fn rmv(&mut self, pos: &Position) -> AccessResult<Option<L::Item>>
+    where
+        L: Layout
+    {
         self.layout.rmv(&self.get_offset_in_grid(pos)?)
+    }
+}
+
+impl <L> Deref for Grid<L> {
+    type Target = L;
+    fn deref(&self) -> &Self::Target {
+        &self.layout
+    }
+}
+
+impl <L> DerefMut for Grid<L> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.layout
     }
 }
