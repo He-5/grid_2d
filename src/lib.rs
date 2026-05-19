@@ -1,6 +1,8 @@
 mod grid;
 pub use grid::{
     Grid,
+    TightLayout,
+    LooseLayout,
     RectWalker,
     OffsetWalker,
     PathWalker,

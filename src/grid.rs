@@ -3,7 +3,13 @@ use crate::axis::Offset;
 use crate::Position;
 
 mod layout;
-pub use layout::{AccessError, AccessResult, CompressLayout, GlobalLayout, Layout};
+pub use layout::{
+    AccessError,
+    AccessResult,
+    TightLayout,
+    LooseLayout,
+    Layout
+};
 
 mod walker;
 pub use walker::{

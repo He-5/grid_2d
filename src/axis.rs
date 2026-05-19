@@ -1,13 +1,11 @@
 //! graphic utils of axis
-pub mod zone;
+pub mod rect;
 
 use std::cmp::{max, min};
-pub use zone::{Rect, RectZone, MajoredRect};
-pub(crate) use zone::chunking;
 
 use std::ops::{Add, AddAssign, Mul, Neg, Range, Sub, SubAssign};
+use rect::Rect;
 use crate::some;
-// pub type Position = (usize, usize);
 
 /// the `Position` represent a 2-Dim grid pos
 #[derive(Copy, Clone, Debug, Default, Hash, PartialEq, Eq)]
@@ -137,14 +135,6 @@ impl Offset {
         self.1
     }
 
-    pub(crate) fn get_mut_x(&mut self) -> &mut isize {
-        &mut self.0
-    }
-
-    pub(crate) fn get_mut_y(&mut self) -> &mut isize {
-        &mut self.1
-    }
-
     pub fn is_zero(&self) -> bool {
         self.get_x() == 0 && self.get_y() == 0
     }
@@ -190,8 +180,8 @@ impl Add<Offset> for Offset {
 
 impl AddAssign<Offset> for Offset {
     fn add_assign(&mut self, rhs: Offset) {
-        *self.get_mut_x() += rhs.get_x();
-        *self.get_mut_y() += rhs.get_y();
+        self.0 += rhs.get_x();
+        self.1 += rhs.get_y();
     }
 }
 
@@ -204,8 +194,8 @@ impl Sub<Offset> for Offset {
 
 impl SubAssign<Offset> for Offset {
     fn sub_assign(&mut self, rhs: Offset) {
-        *self.get_mut_x() -= rhs.get_x();
-        *self.get_mut_y() -= rhs.get_y();
+        self.0 -= rhs.get_x();
+        self.1 -= rhs.get_y();
     }
 }
 
