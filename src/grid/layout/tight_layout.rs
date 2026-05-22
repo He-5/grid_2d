@@ -1,5 +1,6 @@
-use crate::axis::{Offset, Rect};
+use crate::axis::rect::Rect;
 use crate::grid::layout::{AccessError, AccessResult, Layout};
+use crate::{Position, RectBounded};
 use std::iter::{repeat_with, Enumerate};
 use std::ops::ControlFlow;
 use std::vec;
@@ -55,7 +56,7 @@ impl <T> TightLayout<T> {
         )
     }
 
-    pub fn fill_with(&mut self, mut f: impl FnMut(Offset) -> T) {
+    pub fn fill_with(&mut self, mut f: impl FnMut(Position) -> T) {
         self.data.iter_mut()
             .enumerate()
             .for_each(|(index, slot)| {
@@ -92,31 +93,43 @@ impl <T> TightLayout<T> {
         &self.rect
     }
 
-    fn map_data_index(&self, offset: &Offset) -> AccessResult<usize> {
-        self.rect.flatten_x_first(offset).ok_or(AccessError::CannotAccess(*offset))
+    fn map_data_index(&self, pos: &Position) -> AccessResult<usize> {
+        self.rect.flatten_x_first(pos).ok_or(AccessError::CannotAccess(*pos))
+    }
+}
+
+impl <T> From<Rect> for TightLayout<T> {
+    fn from(value: Rect) -> Self {
+        Self::with_rect(value)
     }
 }
 
 impl <T> Layout for TightLayout<T> {
     type Item = T;
-    fn get(&self, offset: &Offset) -> AccessResult<&Self::Item> {
-        let index = self.map_data_index(offset)?;
-        self.data[index].as_ref().ok_or(AccessError::NoValue(*offset))
+    fn get(&self, pos: &Position) -> AccessResult<&Self::Item> {
+        let index = self.map_data_index(pos)?;
+        self.data[index].as_ref().ok_or(AccessError::NoValue(*pos))
     }
 
-    fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut Self::Item> {
-        let index = self.map_data_index(offset)?;
-        self.data[index].as_mut().ok_or(AccessError::NoValue(*offset))
+    fn get_mut(&mut self, pos: &Position) -> AccessResult<&mut Self::Item> {
+        let index = self.map_data_index(pos)?;
+        self.data[index].as_mut().ok_or(AccessError::NoValue(*pos))
     }
 
-    fn set(&mut self, offset: &Offset, item: Self::Item) -> AccessResult<Option<Self::Item>> {
-        let index = self.map_data_index(offset)?;
+    fn set(&mut self, pos: &Position, item: Self::Item) -> AccessResult<Option<Self::Item>> {
+        let index = self.map_data_index(pos)?;
         Ok(self.data[index].replace(item))
     }
 
-    fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<Self::Item>> {
-        let index = self.map_data_index(offset)?;
+    fn rmv(&mut self, pos: &Position) -> AccessResult<Option<Self::Item>> {
+        let index = self.map_data_index(pos)?;
         Ok(self.data[index].take())
+    }
+}
+
+impl <T> RectBounded for TightLayout<T> {
+    fn boundary(&self) -> &Rect {
+        &self.rect
     }
 }
 
@@ -126,7 +139,7 @@ pub struct IntoIter<T> {
 }
 
 impl <T> Iterator for IntoIter<T> {
-    type Item = (Offset, T);
+    type Item = (Position, T);
     fn next(&mut self) -> Option<Self::Item> {
         let (index, value) = self.remaining.try_fold((), |_, remains| match remains {
             (index, Some(value)) => ControlFlow::Break((index, value)),
@@ -138,7 +151,7 @@ impl <T> Iterator for IntoIter<T> {
 }
 
 impl <T> IntoIterator for TightLayout<T> {
-    type Item = (Offset, T);
+    type Item = (Position, T);
     type IntoIter = IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {

@@ -1,12 +1,36 @@
 //! 最宽松的存储布局，存储离散数据
 
-use crate::axis::{Offset, Rect};
 use crate::grid::layout::{AccessError, AccessResult, Layout};
 use std::cmp::max;
 use std::collections::{hash_map, HashMap};
+use crate::axis::rect::Rect;
+use crate::Position;
+
+impl <T> Layout for HashMap<Position, T> {
+    type Item = T;
+    fn get(&self, pos: &Position) -> AccessResult<&Self::Item> {
+        self.get(pos).ok_or(AccessError::NoValue(*pos))
+    }
+
+    fn get_mut(&mut self, pos: &Position) -> AccessResult<&mut Self::Item> {
+        self.get_mut(pos).ok_or(AccessError::NoValue(*pos))
+    }
+
+    fn set(&mut self, pos: &Position, item: Self::Item) -> AccessResult<Option<Self::Item>> {
+        Ok(self.insert(*pos, item))
+    }
+
+    fn rmv(&mut self, pos: &Position) -> AccessResult<Option<Self::Item>> {
+        Ok(self.remove(pos))
+    }
+
+    fn has(&self, pos: &Position) -> bool {
+        self.contains_key(pos)
+    }
+}
 
 pub struct LooseLayout<T> {
-    data_map: HashMap<Offset, T>,
+    data_map: HashMap<Position, T>,
     rect: Rect
 }
 
@@ -22,15 +46,15 @@ impl <T> LooseLayout<T> {
         }
     }
 
-    pub fn get_rect(&self) -> &Rect {
-        &self.rect
+    pub fn unbound(self) -> HashMap<Position, T> {
+        self.data_map
     }
 
-    fn contains_check(&self, offset: &Offset) -> AccessResult<()> {
-        if self.rect.contains_offset(offset) {
+    fn contains_check(&self, pos: &Position) -> AccessResult<()> {
+        if self.rect.contains_pos(pos) {
             Ok(())
         } else {
-            Err(AccessError::CannotAccess(*offset))
+            Err(AccessError::CannotAccess(*pos))
         }
     }
 }
@@ -38,40 +62,46 @@ impl <T> LooseLayout<T> {
 impl <T> Layout for LooseLayout<T> {
     type Item = T;
 
-    fn get(&self, offset: &Offset) -> AccessResult<&Self::Item> {
-        self.contains_check(offset)?;
-        self.data_map.get(offset).ok_or(AccessError::NoValue(*offset))
+    fn get(&self, pos: &Position) -> AccessResult<&Self::Item> {
+        self.contains_check(pos)?;
+        Layout::get(&self.data_map, pos)
     }
 
-    fn get_mut(&mut self, offset: &Offset) -> AccessResult<&mut Self::Item> {
-        self.contains_check(offset)?;
-        self.data_map.get_mut(offset).ok_or(AccessError::NoValue(*offset))
+    fn get_mut(&mut self, pos: &Position) -> AccessResult<&mut Self::Item> {
+        self.contains_check(pos)?;
+        Layout::get_mut(&mut self.data_map, pos)
     }
 
-    fn set(&mut self, offset: &Offset, item: Self::Item) -> AccessResult<Option<Self::Item>> {
-        self.contains_check(offset)?;
-        Ok(self.data_map.insert(*offset, item))
+    fn set(&mut self, pos: &Position, item: Self::Item) -> AccessResult<Option<Self::Item>> {
+        self.contains_check(pos)?;
+        Layout::set(&mut self.data_map, pos, item)
     }
 
-    fn rmv(&mut self, offset: &Offset) -> AccessResult<Option<Self::Item>> {
-        self.contains_check(offset)?;
-        Ok(self.data_map.remove(offset))
+    fn rmv(&mut self, pos: &Position) -> AccessResult<Option<Self::Item>> {
+        self.contains_check(pos)?;
+        Layout::rmv(&mut self.data_map, pos)
+    }
+}
+
+impl <T> From<Rect> for LooseLayout<T> {
+    fn from(value: Rect) -> Self {
+        Self::with_rect(value)
     }
 }
 
 pub struct IntoIter<T> {
-    remaining: hash_map::IntoIter<Offset, T>,
+    remaining: hash_map::IntoIter<Position, T>,
 }
 
 impl <T> Iterator for IntoIter<T> {
-    type Item = (Offset, T);
+    type Item = (Position, T);
     fn next(&mut self) -> Option<Self::Item> {
         self.remaining.next()
     }
 }
 
 impl <T> IntoIterator for LooseLayout<T> {
-    type Item = (Offset, T);
+    type Item = (Position, T);
     type IntoIter = IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {

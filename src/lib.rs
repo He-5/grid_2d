@@ -1,25 +1,22 @@
 mod grid;
 pub use grid::{
+    walker::{
+        rect_walker::RectWalker, WalkWith, Walker, NeverAcross,
+        Walkthrough
+    },
+    AccessError,
+    AccessResult,
     Grid,
-    TightLayout,
     LooseLayout,
-    RectWalker,
-    OffsetWalker,
-    PathWalker,
-    Movement,
-    D8Step,
-    D4Step,
-    WalkWith,
-    Walkthrough
+    TightLayout,
+    Layout
 };
 
 mod axis;
 pub use axis::{
-    Position,
     Offset,
-    Rect,
-    RectZone,
-    zone::Zone
+    Position,
+    rect::{Rect, RectBounded}
 };
 
 mod macros;
